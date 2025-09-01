@@ -1,0 +1,5 @@
+these are the keys that are in the .env file
+
+DB_USER=order_user 
+DB_PASSWORD=111 
+DB_NAME=orders_db

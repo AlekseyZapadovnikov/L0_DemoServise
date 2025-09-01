@@ -1,0 +1,7 @@
+{
+    "env": "local",
+    "storage": {
+        "db_host": "localhost",
+        "db_port": "5432"
+    }
+}
