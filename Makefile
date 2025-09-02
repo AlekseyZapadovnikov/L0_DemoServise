@@ -2,7 +2,6 @@
 export DB_HOST = localhost
 export DB_PORT = 5432
 export DB_USER = order_user
-export DB_PASSWORD = 111 # НУЖНО ПЕРЕДЕЛАТЬ (DELETE)
 export DB_NAME = orders_db
 
 # --- Название топика Kafka ---
