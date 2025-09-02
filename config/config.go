@@ -71,6 +71,7 @@ func MustLoad() *Config {
 		log.Fatal("DB_NAME environment variable is not set")
 	}
 
-	// это не все ...
 	return &cfg
 }
+
+// структура данных config

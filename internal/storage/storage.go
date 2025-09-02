@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool" // решил использовать, pool, вдруг понадобится масштабировать проект в L3
 )
 
+// интерфейс, для того чтобы можно было запускать тесты
 type DBPool interface {
 	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
 	Begin(ctx context.Context) (pgx.Tx, error)
@@ -131,7 +132,7 @@ func (s *Storage) SaveOrder(ctx context.Context, o entity.Order) error {
 }
 /* Items — это список. Если заказов много или товаров в заказе >10-20,
 обычные вставки (Exec в цикле) будут медленными, потому что каждый Exec — отдельный запрос к серверу БД =>
-много сетевых вызовов -- это дорого, поэтому, я думаю, что тут лучше использовать CopyForm или Batch */
+много сетевых вызовов -> это дорого, поэтому, я думаю, что тут лучше использовать CopyForm или хотя бы Batch */
 
 
 // GetAllOrders загружает все заказы из БД для восстановления кэша
@@ -260,7 +261,6 @@ func (s *Storage) GetOrderByUID(ctx context.Context, orderUID string) (entity.Or
 		}
 	}
 	// были ли ошибки во время итерации по строкам
-	// !!! Цикл for rows.Next() не ловит все ошибки — некоторые проявляются только в конце. !!!  DELETE DELETE
 	if err = rows.Err(); err != nil {
 		return entity.Order{}, fmt.Errorf("error during rows iteration: %w", err)
 	}
@@ -285,7 +285,7 @@ func (s *Storage) GetOrderByUID(ctx context.Context, orderUID string) (entity.Or
 // 2) fmt.Scan() вернёт ошибку если попытется из БД прочитать null в int, мне кажется это плохо и делает систему нестабильной
 // проблема в том, что я это очень поздно понял
 // варианты решения были
-// 1) поставить DEFAULT значения в БД
+// 1) поставить DEFAULT значения в БД (P.s я выбрал этот вариант)
 // 2) использовать sql.Null* (sql.NullString, sql.NullInt64 ...)
 // 3) использовать указатели вместо полей в структуре, но тогда уже лучше sql.Null*
 

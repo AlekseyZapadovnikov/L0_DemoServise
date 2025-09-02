@@ -28,3 +28,5 @@ func main() {
 	writer.Close()
 	fmt.Println("Message sent")
 }
+
+// это мини "скрипт" для отправки сообщения в kafka

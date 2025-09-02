@@ -1,3 +1,6 @@
+// крутое архитектурное решение - сделать сущности глобальными, 
+// не нужны никакие дополнительные сервисы для передачи данных между слоями
+
 package entity
 
 import "time"
@@ -65,3 +68,5 @@ type Item struct {
 	Brand       string `json:"brand" db:"brand"`
 	Status      int    `json:"status" db:"status"`
 }
+
+

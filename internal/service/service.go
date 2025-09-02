@@ -1,3 +1,5 @@
+// пакет сервис реализует слой бизнес логики
+
 package service
 
 import (
@@ -17,8 +19,8 @@ type getOrder interface {
 }
 
 type Service struct {
-	OrderMap map[string]entity.Order
-	OrderTaker getOrder
+	OrderMap map[string]entity.Order // это реализация нашего Cache, очень удобно использовать map тк достум к данным константа
+	OrderTaker getOrder // это интерфейс, в нашем случае реализация этого интерфейса это пакет storage
 }
 
 func NewService(storage getOrder) *Service {
@@ -28,6 +30,7 @@ func NewService(storage getOrder) *Service {
 	}
 }
 
+// загружаем Cache при запусте сервиса
 func (s *Service) LoadCache(ctx context.Context) error {
 	orders, err := s.OrderTaker.GetAllOrders(ctx)
 	if err != nil {
@@ -41,6 +44,7 @@ func (s *Service) LoadCache(ctx context.Context) error {
 	return nil
 }
 
+// возвращает Order по UID
 func (s *Service) GiveOrderByUID(UID string) (entity.Order, error) {
 	ord, isIn := s.OrderMap[UID]
 
@@ -60,6 +64,7 @@ func (s *Service) GiveOrderByUID(UID string) (entity.Order, error) {
 	return ord, nil
 }
 
+// сохраняет Order в БД и в Cache
 func (s *Service) SaveOrder(ctx context.Context, o entity.Order) error {
 	s.addToCache(o)
 	slog.Info("Saving order to database", "order_uid", o.OrderUID)
@@ -69,6 +74,7 @@ func (s *Service) SaveOrder(ctx context.Context, o entity.Order) error {
 	return nil
 }
 
+// добавляет Order в cache
 func (s *Service) addToCache(ord entity.Order) {
 	s.OrderMap[ord.OrderUID] = ord
 }

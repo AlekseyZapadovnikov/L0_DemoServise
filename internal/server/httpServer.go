@@ -45,12 +45,14 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.router.ServeHTTP(w, r) // находим нужный хэндлер и вызываем
 }
 
+// эта функция заполняет наш маршрутизатор нужными хендлерами
 func (s *Server) routes() {
     s.router.HandleFunc("GET /", s.handleHomePage())      
     s.router.HandleFunc("GET /order/{UID}", s.handleOrderByUID()) 
 }
 
 
+// handleHomePage() просто загружает домашнюю страницу html
 var tmpl = template.Must(template.ParseGlob("internal/server/templates/*.html")) // загрузили все html
 
 func (s *Server) handleHomePage() http.HandlerFunc {
@@ -59,7 +61,7 @@ func (s *Server) handleHomePage() http.HandlerFunc {
 	}
 }
 
-
+// выводит данные о заказе в браузер в формате json
 func (s *Server) handleOrderByUID() http.HandlerFunc {
     return func(w http.ResponseWriter, r *http.Request) {
         // ожидаем URL вида: /order/<uid>

@@ -16,6 +16,7 @@ import (
 	"github.com/pashagolub/pgxmock/v3"
 )
 
+// эта функция тестирует GetOrderByUID, перед её запуском нужно добавить в БД объект "../../cmd/helpCMD/model.json"
 func TestGetOrderByUID(t *testing.T) {
 	mock, err := pgxmock.NewPool() // создаём виртуальное подключение к БД
 	if err != nil {

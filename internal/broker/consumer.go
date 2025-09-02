@@ -29,7 +29,7 @@ func NewKafkaConsumer(brokerAddr string, topic string, groupID string, saver Ord
 	return &KafkaConsumer{reader: reader, saver: saver}
 }
 
-// запускаем в отдельной горутине, этот метод принимает сообщения из Kafka и сохраняет в БД и Cache
+// запускаем в отдельной горутине, этот метод принимает сообщения из Kafka и сохраняет сообщения в БД и Cache
 func (c *KafkaConsumer) ConsumeAndSave(ctx context.Context) error {
 	for {
 		msg, err := c.reader.ReadMessage(ctx)
@@ -40,7 +40,7 @@ func (c *KafkaConsumer) ConsumeAndSave(ctx context.Context) error {
 		var order entity.Order
 		if err := json.Unmarshal(msg.Value, &order); err != nil {
 			slog.Error("failed to parse order JSON", "error", err)
-			continue // Пропускаем некорректное сообщение
+			continue // Пропускаем некорректное сообщение, предварительно логируя
 		}
 
 		// Сохраняем в БД и кэш через saver (service)
