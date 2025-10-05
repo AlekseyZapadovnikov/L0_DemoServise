@@ -13,6 +13,24 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool" // решил использовать, pool, вдруг понадобится масштабировать проект в L3
 )
 
+const(
+	orderQuery = `
+		SELECT 
+			o.order_uid, o.track_number, o.entry, o.locale, o.internal_signature, o.customer_id, 
+			o.delivery_service, o.shardkey, o.sm_id, o.date_created, o.oof_shard,
+			d.name, d.phone, d.zip, d.city, d.address, d.region, d.email,
+			p.request_id, p.currency, p.provider, p.amount, p.payment_dt, p.bank, 
+			p.delivery_cost, p.goods_total, p.custom_fee,
+			i.rid, i.chrt_id, i.track_number AS item_track_number, i.price, i.name AS item_name, 
+			i.sale, i.size, i.total_price, i.nm_id, i.brand, i.status
+		FROM orders o
+		FROM orders o
+		LEFT JOIN delivery d ON o.order_uid = d.order_uid
+		LEFT JOIN payment p ON o.order_uid = p.order_uid
+		LEFT JOIN items i ON o.order_uid = i.order_uid
+		`
+)
+
 // интерфейс, для того чтобы можно было запускать тесты
 type DBPool interface {
 	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
@@ -134,24 +152,9 @@ func (s *Storage) SaveOrder(ctx context.Context, o entity.Order) error {
 обычные вставки (Exec в цикле) будут медленными, потому что каждый Exec — отдельный запрос к серверу БД =>
 много сетевых вызовов -> это дорого, поэтому, я думаю, что тут лучше использовать CopyForm или хотя бы Batch */
 
-
-// GetAllOrders загружает все заказы из БД для восстановления кэша
-func (s *Storage) GetAllOrders(ctx context.Context) ([]entity.Order, error) {
-	query := `
-		SELECT 
-			o.order_uid, o.track_number, o.entry, o.locale, o.internal_signature, o.customer_id, 
-			o.delivery_service, o.shardkey, o.sm_id, o.date_created, o.oof_shard,
-			d.name, d.phone, d.zip, d.city, d.address, d.region, d.email,
-			p.request_id, p.currency, p.provider, p.amount, p.payment_dt, p.bank, 
-			p.delivery_cost, p.goods_total, p.custom_fee,
-			i.rid, i.chrt_id, i.track_number AS item_track_number, i.price, i.name AS item_name, 
-			i.sale, i.size, i.total_price, i.nm_id, i.brand, i.status
-		FROM orders o
-		LEFT JOIN delivery d ON o.order_uid = d.order_uid
-		LEFT JOIN payment p ON o.order_uid = p.order_uid
-		LEFT JOIN items i ON o.order_uid = i.order_uid
-		ORDER BY o.order_uid  -- Для упорядочивания, чтобы строки одного заказа шли подряд (опционально)
-	`
+func (s *Storage) GetLastNOrders(ctx context.Context, n int) ([]entity.Order, error) {
+	secondPart := "\nLIMIT $1"
+	query := orderQuery + secondPart
 
 	rows, err := s.pool.Query(ctx, query)
 	if err != nil {
@@ -205,7 +208,6 @@ func (s *Storage) GetAllOrders(ctx context.Context) ([]entity.Order, error) {
 
 	return orders, nil
 }
-
 
 // GetOrderByUID находит один заказ по его ID
 func (s *Storage) GetOrderByUID(ctx context.Context, orderUID string) (entity.Order, error) {
@@ -276,6 +278,78 @@ func (s *Storage) GetOrderByUID(ctx context.Context, orderUID string) (entity.Or
 	order.Payment.OrderUID = order.OrderUID
 
 	return order, nil
+}
+
+
+// GetAllOrders загружает все заказы из БД для восстановления кэша
+func (s *Storage) GetAllOrders(ctx context.Context) ([]entity.Order, error) {
+	query := `
+		SELECT 
+			o.order_uid, o.track_number, o.entry, o.locale, o.internal_signature, o.customer_id, 
+			o.delivery_service, o.shardkey, o.sm_id, o.date_created, o.oof_shard,
+			d.name, d.phone, d.zip, d.city, d.address, d.region, d.email,
+			p.request_id, p.currency, p.provider, p.amount, p.payment_dt, p.bank, 
+			p.delivery_cost, p.goods_total, p.custom_fee,
+			i.rid, i.chrt_id, i.track_number AS item_track_number, i.price, i.name AS item_name, 
+			i.sale, i.size, i.total_price, i.nm_id, i.brand, i.status
+		FROM orders o
+		LEFT JOIN delivery d ON o.order_uid = d.order_uid
+		LEFT JOIN payment p ON o.order_uid = p.order_uid
+		LEFT JOIN items i ON o.order_uid = i.order_uid
+		ORDER BY o.order_uid  -- Для упорядочивания, чтобы строки одного заказа шли подряд (опционально)
+	`
+
+	rows, err := s.pool.Query(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query all orders: %w", err)
+	}
+	defer rows.Close()
+
+	// Map для сборки заказов: ключ - order_uid, значение - указатель на Order
+	ordersMap := make(map[string]*entity.Order)
+
+	for rows.Next() {
+		var order entity.Order
+		var item entity.Item
+
+		err = rows.Scan(
+			&order.OrderUID, &order.TrackNumber, &order.Entry, &order.Locale, &order.InternalSignature, &order.CustomerID,
+			&order.DeliveryService, &order.ShardKey, &order.SmID, &order.DateCreated, &order.OofShard,
+			&order.Delivery.Name, &order.Delivery.Phone, &order.Delivery.Zip, &order.Delivery.City, &order.Delivery.Address, &order.Delivery.Region, &order.Delivery.Email,
+			&order.Payment.RequestID, &order.Payment.Currency, &order.Payment.Provider, &order.Payment.Amount, &order.Payment.PaymentDt, &order.Payment.Bank,
+			&order.Payment.DeliveryCost, &order.Payment.GoodsTotal, &order.Payment.CustomFee,
+			&item.Rid, &item.ChrtID, &item.TrackNumber, &item.Price, &item.Name,
+			&item.Sale, &item.Size, &item.TotalPrice, &item.NmID, &item.Brand, &item.Status,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan row: %w", err)
+		}
+
+		// Проверяем, существует ли заказ в map
+		existingOrder, exists := ordersMap[order.OrderUID]
+		if !exists {
+			//(используем копию, чтобы избежать перезаписи)
+			newOrder := order // Копируем структуру
+			ordersMap[order.OrderUID] = &newOrder
+			existingOrder = &newOrder
+		}
+
+		// Добавляем item, если он есть (rid != "")
+		if item.Rid != "" {
+			existingOrder.Items = append(existingOrder.Items, item)
+		}
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("error during rows iteration: %w", err)
+	}
+
+	orders := make([]entity.Order, 0, len(ordersMap))
+	for _, ord := range ordersMap {
+		orders = append(orders, *ord) 
+	}
+
+	return orders, nil
 }
 
 // 1) эти select выглядят просто ужас... но почему-то мне показалось, что ORM в этом случае будет

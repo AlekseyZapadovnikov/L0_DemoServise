@@ -15,23 +15,29 @@ import (
 type getOrder interface {
 	GetOrderByUID(ctx context.Context, in string) (entity.Order, error)
 	GetAllOrders(ctx context.Context) ([]entity.Order, error)
+	saver
+}
+
+type saver interface {
 	SaveOrder(ctx context.Context, o entity.Order) error
 }
 
-type Service struct {
-	OrderMap map[string]entity.Order // это реализация нашего Cache, очень удобно использовать map тк достум к данным константа
-	OrderTaker getOrder // это интерфейс, в нашем случае реализация этого интерфейса это пакет storage
+type Cache struct {
+	OrderMap   map[string]entity.Order // это реализация нашего Cache, очень удобно использовать map тк достум к данным константа
+	OrderTaker getOrder                // это интерфейс, в нашем случае реализация этого интерфейса это пакет storage
+	prQ        PriorityQueue		// приорететная очередь, для реализации LRU
 }
 
-func NewService(storage getOrder) *Service {
-	return &Service{
-		OrderMap:   make(map[string]entity.Order),
+func NewCache(storage getOrder, cacheCap int) *Cache {
+	return &Cache{
+		OrderMap:   make(map[string]entity.Order, cacheCap),
 		OrderTaker: storage,
+		prQ: make(PriorityQueue, 0, cacheCap),
 	}
 }
 
-// загружаем Cache при запусте сервиса
-func (s *Service) LoadCache(ctx context.Context) error {
+// загружаем cacheCap элементов в наш Cache при запусте сервиса
+func (s *Cache) LoadCache(ctx context.Context) error {
 	orders, err := s.OrderTaker.GetAllOrders(ctx)
 	if err != nil {
 		return fmt.Errorf("error occured while tryed load cache in service.LoadCache() %w", err)
@@ -45,7 +51,7 @@ func (s *Service) LoadCache(ctx context.Context) error {
 }
 
 // возвращает Order по UID
-func (s *Service) GiveOrderByUID(UID string) (entity.Order, error) {
+func (s *Cache) GiveOrderByUID(UID string) (entity.Order, error) {
 	ord, isIn := s.OrderMap[UID]
 
 	if isIn {
@@ -65,7 +71,7 @@ func (s *Service) GiveOrderByUID(UID string) (entity.Order, error) {
 }
 
 // сохраняет Order в БД и в Cache
-func (s *Service) SaveOrder(ctx context.Context, o entity.Order) error {
+func (s *Cache) SaveOrder(ctx context.Context, o entity.Order) error {
 	s.addToCache(o)
 	slog.Info("Saving order to database", "order_uid", o.OrderUID)
 	if err := s.OrderTaker.SaveOrder(ctx, o); err != nil {
@@ -75,6 +81,6 @@ func (s *Service) SaveOrder(ctx context.Context, o entity.Order) error {
 }
 
 // добавляет Order в cache
-func (s *Service) addToCache(ord entity.Order) {
+func (s *Cache) addToCache(ord entity.Order) {
 	s.OrderMap[ord.OrderUID] = ord
 }

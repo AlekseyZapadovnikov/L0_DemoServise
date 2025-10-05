@@ -25,11 +25,11 @@ func main() {
 	slog.Info("Successfully connected to DB", "host", cfg.Storage.Host, "port", cfg.Storage.Port, "dbname", cfg.Storage.DBName)
 	defer stor.Close()
 
-	service := &service.Service{
+	service := &service.Cache{
 		OrderMap:   make(map[string]entity.Order),
 		OrderTaker: stor, // Storage реализует OrderRepository
 	}
-	slog.Info("Service layer initialized")
+	slog.Info("Cache layer initialized")
 
 	// Восстановление кэша
 	if err := service.LoadCache(context.Background()); err != nil {
