@@ -10,10 +10,10 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/jackc/pgx/v5/pgxpool" // решил использовать, pool, вдруг понадобится масштабировать проект в L3
+	"github.com/jackc/pgx/v5/pgxpool" 
 )
 
-const(
+const (
 	orderQuery = `
 		SELECT 
 			o.order_uid, o.track_number, o.entry, o.locale, o.internal_signature, o.customer_id, 
@@ -23,7 +23,6 @@ const(
 			p.delivery_cost, p.goods_total, p.custom_fee,
 			i.rid, i.chrt_id, i.track_number AS item_track_number, i.price, i.name AS item_name, 
 			i.sale, i.size, i.total_price, i.nm_id, i.brand, i.status
-		FROM orders o
 		FROM orders o
 		LEFT JOIN delivery d ON o.order_uid = d.order_uid
 		LEFT JOIN payment p ON o.order_uid = p.order_uid
@@ -148,6 +147,7 @@ func (s *Storage) SaveOrder(ctx context.Context, o entity.Order) error {
 
 	return nil
 }
+
 /* Items — это список. Если заказов много или товаров в заказе >10-20,
 обычные вставки (Exec в цикле) будут медленными, потому что каждый Exec — отдельный запрос к серверу БД =>
 много сетевых вызовов -> это дорого, поэтому, я думаю, что тут лучше использовать CopyForm или хотя бы Batch */
@@ -156,7 +156,7 @@ func (s *Storage) GetLastNOrders(ctx context.Context, n int) ([]entity.Order, er
 	secondPart := "\nLIMIT $1"
 	query := orderQuery + secondPart
 
-	rows, err := s.pool.Query(ctx, query)
+	rows, err := s.pool.Query(ctx, query, n)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query all orders: %w", err)
 	}
@@ -169,15 +169,7 @@ func (s *Storage) GetLastNOrders(ctx context.Context, n int) ([]entity.Order, er
 		var order entity.Order
 		var item entity.Item
 
-		err = rows.Scan(
-			&order.OrderUID, &order.TrackNumber, &order.Entry, &order.Locale, &order.InternalSignature, &order.CustomerID,
-			&order.DeliveryService, &order.ShardKey, &order.SmID, &order.DateCreated, &order.OofShard,
-			&order.Delivery.Name, &order.Delivery.Phone, &order.Delivery.Zip, &order.Delivery.City, &order.Delivery.Address, &order.Delivery.Region, &order.Delivery.Email,
-			&order.Payment.RequestID, &order.Payment.Currency, &order.Payment.Provider, &order.Payment.Amount, &order.Payment.PaymentDt, &order.Payment.Bank,
-			&order.Payment.DeliveryCost, &order.Payment.GoodsTotal, &order.Payment.CustomFee,
-			&item.Rid, &item.ChrtID, &item.TrackNumber, &item.Price, &item.Name,
-			&item.Sale, &item.Size, &item.TotalPrice, &item.NmID, &item.Brand, &item.Status,
-		)
+		err = scanDataFromRows(rows, &order, &item)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan row: %w", err)
 		}
@@ -203,7 +195,7 @@ func (s *Storage) GetLastNOrders(ctx context.Context, n int) ([]entity.Order, er
 
 	orders := make([]entity.Order, 0, len(ordersMap))
 	for _, ord := range ordersMap {
-		orders = append(orders, *ord) 
+		orders = append(orders, *ord)
 	}
 
 	return orders, nil
@@ -211,21 +203,7 @@ func (s *Storage) GetLastNOrders(ctx context.Context, n int) ([]entity.Order, er
 
 // GetOrderByUID находит один заказ по его ID
 func (s *Storage) GetOrderByUID(ctx context.Context, orderUID string) (entity.Order, error) {
-	query := `
-		SELECT 
-			o.order_uid, o.track_number, o.entry, o.locale, o.internal_signature, o.customer_id, 
-			o.delivery_service, o.shardkey, o.sm_id, o.date_created, o.oof_shard,
-			d.name, d.phone, d.zip, d.city, d.address, d.region, d.email,
-			p.request_id, p.currency, p.provider, p.amount, p.payment_dt, p.bank, 
-			p.delivery_cost, p.goods_total, p.custom_fee,
-			i.rid, i.chrt_id, i.track_number AS item_track_number, i.price, i.name AS item_name, 
-			i.sale, i.size, i.total_price, i.nm_id, i.brand, i.status
-		FROM orders o
-		LEFT JOIN delivery d ON o.order_uid = d.order_uid
-		LEFT JOIN payment p ON o.order_uid = p.order_uid
-		LEFT JOIN items i ON o.order_uid = i.order_uid
-		WHERE o.order_uid = $1
-	`
+	query := orderQuery + "\nWHERE o.order_uid = $1" // выбираем все заказы с данным UID
 
 	rows, err := s.pool.Query(ctx, query, orderUID)
 	if err != nil {
@@ -239,15 +217,7 @@ func (s *Storage) GetOrderByUID(ctx context.Context, orderUID string) (entity.Or
 
 	for rows.Next() {
 		var item entity.Item
-		err = rows.Scan(
-			&order.OrderUID, &order.TrackNumber, &order.Entry, &order.Locale, &order.InternalSignature, &order.CustomerID,
-			&order.DeliveryService, &order.ShardKey, &order.SmID, &order.DateCreated, &order.OofShard,
-			&order.Delivery.Name, &order.Delivery.Phone, &order.Delivery.Zip, &order.Delivery.City, &order.Delivery.Address, &order.Delivery.Region, &order.Delivery.Email,
-			&order.Payment.RequestID, &order.Payment.Currency, &order.Payment.Provider, &order.Payment.Amount, &order.Payment.PaymentDt, &order.Payment.Bank,
-			&order.Payment.DeliveryCost, &order.Payment.GoodsTotal, &order.Payment.CustomFee,
-			&item.Rid, &item.ChrtID, &item.TrackNumber, &item.Price, &item.Name,
-			&item.Sale, &item.Size, &item.TotalPrice, &item.NmID, &item.Brand, &item.Status,
-		)
+		err = scanDataFromRows(rows, &order, &item)
 		if err != nil {
 			return entity.Order{}, fmt.Errorf("failed to scan row: %w", err)
 		}
@@ -280,24 +250,9 @@ func (s *Storage) GetOrderByUID(ctx context.Context, orderUID string) (entity.Or
 	return order, nil
 }
 
-
 // GetAllOrders загружает все заказы из БД для восстановления кэша
 func (s *Storage) GetAllOrders(ctx context.Context) ([]entity.Order, error) {
-	query := `
-		SELECT 
-			o.order_uid, o.track_number, o.entry, o.locale, o.internal_signature, o.customer_id, 
-			o.delivery_service, o.shardkey, o.sm_id, o.date_created, o.oof_shard,
-			d.name, d.phone, d.zip, d.city, d.address, d.region, d.email,
-			p.request_id, p.currency, p.provider, p.amount, p.payment_dt, p.bank, 
-			p.delivery_cost, p.goods_total, p.custom_fee,
-			i.rid, i.chrt_id, i.track_number AS item_track_number, i.price, i.name AS item_name, 
-			i.sale, i.size, i.total_price, i.nm_id, i.brand, i.status
-		FROM orders o
-		LEFT JOIN delivery d ON o.order_uid = d.order_uid
-		LEFT JOIN payment p ON o.order_uid = p.order_uid
-		LEFT JOIN items i ON o.order_uid = i.order_uid
-		ORDER BY o.order_uid  -- Для упорядочивания, чтобы строки одного заказа шли подряд (опционально)
-	`
+	query := orderQuery + "\nORDER BY o.date_created DESC"
 
 	rows, err := s.pool.Query(ctx, query)
 	if err != nil {
@@ -312,15 +267,7 @@ func (s *Storage) GetAllOrders(ctx context.Context) ([]entity.Order, error) {
 		var order entity.Order
 		var item entity.Item
 
-		err = rows.Scan(
-			&order.OrderUID, &order.TrackNumber, &order.Entry, &order.Locale, &order.InternalSignature, &order.CustomerID,
-			&order.DeliveryService, &order.ShardKey, &order.SmID, &order.DateCreated, &order.OofShard,
-			&order.Delivery.Name, &order.Delivery.Phone, &order.Delivery.Zip, &order.Delivery.City, &order.Delivery.Address, &order.Delivery.Region, &order.Delivery.Email,
-			&order.Payment.RequestID, &order.Payment.Currency, &order.Payment.Provider, &order.Payment.Amount, &order.Payment.PaymentDt, &order.Payment.Bank,
-			&order.Payment.DeliveryCost, &order.Payment.GoodsTotal, &order.Payment.CustomFee,
-			&item.Rid, &item.ChrtID, &item.TrackNumber, &item.Price, &item.Name,
-			&item.Sale, &item.Size, &item.TotalPrice, &item.NmID, &item.Brand, &item.Status,
-		)
+		err = scanDataFromRows(rows, &order, &item)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan row: %w", err)
 		}
@@ -346,20 +293,22 @@ func (s *Storage) GetAllOrders(ctx context.Context) ([]entity.Order, error) {
 
 	orders := make([]entity.Order, 0, len(ordersMap))
 	for _, ord := range ordersMap {
-		orders = append(orders, *ord) 
+		orders = append(orders, *ord)
 	}
 
 	return orders, nil
 }
 
-// 1) эти select выглядят просто ужас... но почему-то мне показалось, что ORM в этом случае будет
-// "из пушки по воробьям"
+func scanDataFromRows(rows pgx.Rows, order *entity.Order, item *entity.Item) error {
+	return rows.Scan(
+		&order.OrderUID, &order.TrackNumber, &order.Entry, &order.Locale, &order.InternalSignature, &order.CustomerID,
+		&order.DeliveryService, &order.ShardKey, &order.SmID, &order.DateCreated, &order.OofShard,
+		&order.Delivery.Name, &order.Delivery.Phone, &order.Delivery.Zip, &order.Delivery.City, &order.Delivery.Address, &order.Delivery.Region, &order.Delivery.Email,
+		&order.Payment.RequestID, &order.Payment.Currency, &order.Payment.Provider, &order.Payment.Amount, &order.Payment.PaymentDt, &order.Payment.Bank,
+		&order.Payment.DeliveryCost, &order.Payment.GoodsTotal, &order.Payment.CustomFee,
+		&item.Rid, &item.ChrtID, &item.TrackNumber, &item.Price, &item.Name,
+		&item.Sale, &item.Size, &item.TotalPrice, &item.NmID, &item.Brand, &item.Status,
+	)
+}
 
-
-// 2) fmt.Scan() вернёт ошибку если попытется из БД прочитать null в int, мне кажется это плохо и делает систему нестабильной
-// проблема в том, что я это очень поздно понял
-// варианты решения были
-// 1) поставить DEFAULT значения в БД (P.s я выбрал этот вариант)
-// 2) использовать sql.Null* (sql.NullString, sql.NullInt64 ...)
-// 3) использовать указатели вместо полей в структуре, но тогда уже лучше sql.Null*
-
+// file: internal/storage/storage.go
