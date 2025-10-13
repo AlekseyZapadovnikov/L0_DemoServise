@@ -48,6 +48,7 @@ func NewCache(storage getOrder, cacheCap int) *Cache {
 func (s *Cache) LoadCache(ctx context.Context) error {
 	orders, err := s.OrderTaker.GetLastNOrders(ctx, s.cacheCap) // достаём из хранилища N заказов
 	if err != nil {
+		slog.Info("s.OrderTaker.GetLastNOrders(ctx, s.cacheCap)", "error", err)
 		return fmt.Errorf("error occured while tryed load cache in service.LoadCache() %w", err)
 	}
 
@@ -58,6 +59,7 @@ func (s *Cache) LoadCache(ctx context.Context) error {
 		s.OrderMap[ord.OrderUID] = ord
 		item := makeItem(ord.OrderUID)
 		s.prQ.Push(item)
+		s.orderItems[ord.OrderUID] = item
 	}
 	return nil
 }
@@ -70,7 +72,7 @@ func (s *Cache) GiveOrderByUID(UID string) (entity.Order, error) {
 	s.mu.RUnlock()
 
 	if isIn {
-		s.updateOrderPriority(UID) 
+		s.updateOrderPriority(UID)
 		return ord, nil
 	}
 
@@ -104,9 +106,9 @@ func (s *Cache) addToCache(ord entity.Order) {
 	if len(s.OrderMap) >= s.cacheCap {
 		item := s.prQ.Pop()
 		if item != nil {
-			slog.Info("Evicting order from cache", "order_uid", item.value)
-			delete(s.OrderMap, item.value)
-			delete(s.orderItems, item.value)
+			slog.Info("Evicting order from cache", "order_uid", item.Value)
+			delete(s.OrderMap, item.Value)
+			delete(s.orderItems, item.Value)
 		}
 	}
 
@@ -130,3 +132,10 @@ func (s *Cache) updateOrderPriority(UID string) {
 	s.prQ.Update(item, time.Now())
 }
 
+func (s *Cache) GetPriorityQueue() *SafePriorityQueue {
+	return s.prQ
+}
+
+func (s *Cache) PrinPriorityQueue() string{
+	return s.prQ.String()
+}

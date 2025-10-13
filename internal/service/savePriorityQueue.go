@@ -48,8 +48,8 @@ func (spq *SafePriorityQueue) Update(item *Item, newPriority time.Time) {
 	spq.mu.Lock()
 	defer spq.mu.Unlock()
 	
-	item.priority = newPriority
-	heap.Fix(&spq.pq, item.index)
+	item.Priority = newPriority
+	heap.Fix(&spq.pq, item.Index)
 }
 
 // Len возвращает количество элементов в очереди безопасно.
@@ -62,7 +62,29 @@ func (spq *SafePriorityQueue) Len() int {
 
 func makeItem(UID string) *Item {
 	return &Item{
-		value:    UID,
-		priority: time.Now(),
+		Value:    UID,
+		Priority: time.Now(),
 	}
+}
+
+func (sprq *SafePriorityQueue) GetPrq() PriorityQueue{
+	return sprq.pq
+}
+
+func (sprq *SafePriorityQueue) LenPrq() int{
+	return sprq.pq.Len()
+}
+
+func (sprq *SafePriorityQueue) String() string {
+	sprq.mu.Lock()
+	defer sprq.mu.Unlock()
+
+	s := "PriorityQueue: ["
+	for i, item := range sprq.pq {
+		if i > 0 {
+			s += ", "
+		}
+		s += item.Value + "(" + item.Priority.String() + ")"
+	}
+	return s + "]"
 }
