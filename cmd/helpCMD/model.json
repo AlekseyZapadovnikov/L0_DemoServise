@@ -1,5 +1,5 @@
 {
-    "order_uid": "b563feb7b2b84b6test",
+    "order_uid": "b563feb7b2b84b6test1",
     "track_number": "WBILMTESTTRACK",
     "entry": "WBIL",
     "delivery": {
@@ -12,7 +12,7 @@
         "email": "test@gmail.com"
     },
     "payment": {
-        "transaction": "b563feb7b2b84b6test",
+        "transaction": "b563feb7b2b84b6test1",
         "request_id": "",
         "currency": "USD",
         "provider": "wbpay",
@@ -28,7 +28,7 @@
             "chrt_id": 9934930,
             "track_number": "WBILMTESTTRACK",
             "price": 453,
-            "rid": "ab4219087a764ae0btest",
+            "rid": "ab4219087a764ae0btest1",
             "name": "Mascaras",
             "sale": 30,
             "size": "0",

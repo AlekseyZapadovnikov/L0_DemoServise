@@ -10,7 +10,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/jackc/pgx/v5/pgxpool" 
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 const (
@@ -19,7 +19,9 @@ const (
 			o.order_uid, o.track_number, o.entry, o.locale, o.internal_signature, o.customer_id, 
 			o.delivery_service, o.shardkey, o.sm_id, o.date_created, o.oof_shard,
 			d.name, d.phone, d.zip, d.city, d.address, d.region, d.email,
+			p.order_uid AS payment_uid,
 			p.request_id, p.currency, p.provider, p.amount, p.payment_dt, p.bank, 
+
 			p.delivery_cost, p.goods_total, p.custom_fee,
 			i.rid, i.chrt_id, i.track_number AS item_track_number, i.price, i.name AS item_name, 
 			i.sale, i.size, i.total_price, i.nm_id, i.brand, i.status
@@ -29,6 +31,21 @@ const (
 		LEFT JOIN items i ON o.order_uid = i.order_uid
 		`
 )
+
+func scanDataFromRows(rows pgx.Rows, order *entity.Order, item *entity.Item) error {
+	return rows.Scan(
+		&order.OrderUID, &order.TrackNumber, &order.Entry, &order.Locale, &order.InternalSignature, &order.CustomerID,
+		&order.DeliveryService, &order.ShardKey, &order.SmID, &order.DateCreated, &order.OofShard,
+		&order.Delivery.Name, &order.Delivery.Phone, &order.Delivery.Zip, &order.Delivery.City, &order.Delivery.Address, &order.Delivery.Region, &order.Delivery.Email,
+
+		&order.Payment.OrderUID,
+		&order.Payment.RequestID, &order.Payment.Currency, &order.Payment.Provider, &order.Payment.Amount, &order.Payment.PaymentDt, &order.Payment.Bank,
+
+		&order.Payment.DeliveryCost, &order.Payment.GoodsTotal, &order.Payment.CustomFee,
+		&item.Rid, &item.ChrtID, &item.TrackNumber, &item.Price, &item.Name,
+		&item.Sale, &item.Size, &item.TotalPrice, &item.NmID, &item.Brand, &item.Status,
+	)
+}
 
 // интерфейс, для того чтобы можно было запускать тесты
 type DBPool interface {
@@ -298,17 +315,3 @@ func (s *Storage) GetAllOrders(ctx context.Context) ([]entity.Order, error) {
 
 	return orders, nil
 }
-
-func scanDataFromRows(rows pgx.Rows, order *entity.Order, item *entity.Item) error {
-	return rows.Scan(
-		&order.OrderUID, &order.TrackNumber, &order.Entry, &order.Locale, &order.InternalSignature, &order.CustomerID,
-		&order.DeliveryService, &order.ShardKey, &order.SmID, &order.DateCreated, &order.OofShard,
-		&order.Delivery.Name, &order.Delivery.Phone, &order.Delivery.Zip, &order.Delivery.City, &order.Delivery.Address, &order.Delivery.Region, &order.Delivery.Email,
-		&order.Payment.RequestID, &order.Payment.Currency, &order.Payment.Provider, &order.Payment.Amount, &order.Payment.PaymentDt, &order.Payment.Bank,
-		&order.Payment.DeliveryCost, &order.Payment.GoodsTotal, &order.Payment.CustomFee,
-		&item.Rid, &item.ChrtID, &item.TrackNumber, &item.Price, &item.Name,
-		&item.Sale, &item.Size, &item.TotalPrice, &item.NmID, &item.Brand, &item.Status,
-	)
-}
-
-// file: internal/storage/storage.go

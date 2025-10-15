@@ -7,7 +7,6 @@ import (
 
 	"github.com/Asus/L0_DemoServise/config"
 	"github.com/Asus/L0_DemoServise/internal/broker"
-	"github.com/Asus/L0_DemoServise/internal/entity"
 	"github.com/Asus/L0_DemoServise/internal/server"
 	"github.com/Asus/L0_DemoServise/internal/service"
 	"github.com/Asus/L0_DemoServise/internal/storage"
@@ -25,21 +24,19 @@ func main() {
 	slog.Info("Successfully connected to DB", "host", cfg.Storage.Host, "port", cfg.Storage.Port, "dbname", cfg.Storage.DBName)
 	defer stor.Close()
 
-	service := &service.Cache{
-		OrderMap:   make(map[string]entity.Order),
-		OrderTaker: stor, // Storage реализует OrderRepository
-	}
+	Cache := service.NewCache(stor, cfg.CacheCap) // TODO: не хардкодить
 	slog.Info("Cache layer initialized")
 
 	// Восстановление кэша
-	if err := service.LoadCache(context.Background()); err != nil {
+	if err := Cache.LoadCache(context.Background()); err != nil {
 		slog.Error("failed to load cache", "error", err)
 		os.Exit(1)
 	}
-	slog.Info("Cache successfully populated from database", "orders_loaded", len(service.OrderMap))
+
+	slog.Info("Cache successfully populated from database", "orders_loaded", len(Cache.OrderMap))
 
 	// Kafka consumer
-	consumer := broker.NewKafkaConsumer("localhost:9092", "orders", "order-service-group", service)
+	consumer := broker.NewKafkaConsumer("localhost:9092", "orders", "order-service-group", Cache)
 	slog.Info("Kafka consumer initialized")
 	go func() {
 		if err := consumer.ConsumeAndSave(context.Background()); err != nil {
@@ -47,7 +44,7 @@ func main() {
 		}
 	}()
 
-	server := server.NewServer("localhost:8080", service)
+	server := server.NewServer("localhost:8080", Cache)
 	slog.Info("HTTP server initialized", "address", "localhost:8080")
 	server.Start()
 }

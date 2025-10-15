@@ -4,32 +4,36 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 
 	"github.com/Asus/L0_DemoServise/internal/entity"
 	"github.com/segmentio/kafka-go"
-	"log/slog"
 )
 
 type OrderSaver interface {
-	SaveOrder(ctx context.Context, o entity.Order) error // Интерфейс для вызова из service
+	SaveOrder(ctx context.Context, o entity.Order) error
 }
 
 type KafkaConsumer struct {
 	reader *kafka.Reader
 	saver  OrderSaver
+	// validate *validate.Validate
 }
 
 func NewKafkaConsumer(brokerAddr string, topic string, groupID string, saver OrderSaver) *KafkaConsumer {
 	reader := kafka.NewReader(kafka.ReaderConfig{
-		Brokers:  []string{brokerAddr}, // e.g. "localhost:9092" брокеры, которые подключены к кластеру
-		Topic:    topic,                // "orders"
-		GroupID:  groupID,              // "order-service-group"
-		MaxBytes: 10e6,                 // 10MB
+		Brokers:  []string{brokerAddr},
+		Topic:    topic,
+		GroupID:  groupID,
+		MaxBytes: 10e6,
 	})
-	return &KafkaConsumer{reader: reader, saver: saver}
+	return &KafkaConsumer{
+		reader: reader,
+		saver:  saver,
+		// validate: validate.New(),
+	}
 }
 
-// запускаем в отдельной горутине, этот метод принимает сообщения из Kafka и сохраняет сообщения в БД и Cache
 func (c *KafkaConsumer) ConsumeAndSave(ctx context.Context) error {
 	for {
 		msg, err := c.reader.ReadMessage(ctx)
@@ -39,21 +43,25 @@ func (c *KafkaConsumer) ConsumeAndSave(ctx context.Context) error {
 
 		var order entity.Order
 		if err := json.Unmarshal(msg.Value, &order); err != nil {
-			slog.Error("failed to parse order JSON", "error", err)
-			continue // Пропускаем некорректное сообщение, предварительно логируя
+			slog.Error("failed to parse order JSON", "error", err, "message", string(msg.Value))
+			continue
 		}
 
-		// Сохраняем в БД и кэш через saver (service)
+		// Валидация данных
+		if err := entity.Validate.Struct(order); err != nil {
+			slog.Error("failed to validate order data", "error", err, "order_uid", order.OrderUID)
+			continue // Пропускаем невалидное сообщение, предварительно логируя его
+		}
+		
+		slog.Info("Order processed from Kafka", "order_uid", order.OrderUID)
+
+		// Сохранение заказа
 		if err := c.saver.SaveOrder(ctx, order); err != nil {
 			slog.Error("failed to save order", "order_uid", order.OrderUID, "error", err)
 			continue
 		}
-
-		slog.Info("Order processed from Kafka", "order_uid", order.OrderUID)
 	}
 }
-// немного не SingleResp, но мне кажется удобно, просто в горутине запустить и уже с этим не возиться
-// работать только с Cache
 
 func (c *KafkaConsumer) Close() error {
 	return c.reader.Close()

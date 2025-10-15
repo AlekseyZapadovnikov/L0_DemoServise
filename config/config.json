@@ -3,5 +3,6 @@
     "storage": {
         "db_host": "localhost",
         "db_port": "5432"
-    }
+    },
+    "cache_cap": 10
 }

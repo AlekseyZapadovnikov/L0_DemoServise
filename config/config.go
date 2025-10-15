@@ -9,11 +9,13 @@ import (
 )
 
 const (
-	defoltCfgPath = "C:/Users/Asus/Desktop/go_p/L0_DemoServise/config/config.json"
+	defoltCfgPath = "config/config.json"
 )
+
 type Config struct {
 	Env string `json:"env"`
 	Storage Storage  `json:"storage"`
+	CacheCap   int    `json:"cache_cap"`
 }
 
 type Storage struct {
@@ -41,6 +43,8 @@ func MustLoad() *Config {
 
 	if _, err := os.Stat(cfgPath); os.IsNotExist(err) {
 		log.Fatalf("config file by way %s doesn`t exist", cfgPath)
+	} else {
+		log.Fatalf("error %v", err)
 	}
 
 	data, err := os.ReadFile(cfgPath)

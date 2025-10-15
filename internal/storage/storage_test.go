@@ -1,5 +1,3 @@
-// file: internal/storage/storage_test.go
-
 package storage
 
 import (
@@ -16,20 +14,18 @@ import (
 	"github.com/pashagolub/pgxmock/v3"
 )
 
-var (
-	// Выносим колонки в глобальную переменную, чтобы не дублировать
-	cols = []string{
-		"order_uid", "track_number", "entry", "locale", "internal_signature", "customer_id",
-		"delivery_service", "shardkey", "sm_id", "date_created", "oof_shard",
-		"name", "phone", "zip", "city", "address", "region", "email",
-		"request_id", "currency", "provider", "amount", "payment_dt", "bank",
-		"delivery_cost", "goods_total", "custom_fee",
-		"rid", "chrt_id", "item_track_number", "price", "item_name",
-		"sale", "size", "total_price", "nm_id", "brand", "status",
-	}
-)
+// cols определяет точный порядок и имена колонок, которые мы ожидаем от SQL-запроса.
+// Это центральное место для синхронизации тестов с реальным запросом.
+var cols = []string{
+	"order_uid", "track_number", "entry", "locale", "internal_signature", "customer_id",
+	"delivery_service", "shardkey", "sm_id", "date_created", "oof_shard",
+	"name", "phone", "zip", "city", "address", "region", "email",
+	"payment_uid", "request_id", "currency", "provider", "amount", "payment_dt", "bank",
+	"delivery_cost", "goods_total", "custom_fee",
+	"rid", "chrt_id", "item_track_number", "price", "item_name",
+	"sale", "size", "total_price", "nm_id", "brand", "status",
+}
 
-// ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
 
 // loadTemplateOrder загружает базовый заказ-шаблон из JSON файла.
 func loadTemplateOrder() (entity.Order, error) {
@@ -48,22 +44,19 @@ func loadTemplateOrder() (entity.Order, error) {
 // generateTestOrder создаёт уникальный заказ на основе шаблона и индекса.
 func generateTestOrder(templOrder entity.Order, i int) entity.Order {
 	order := templOrder
-	// Глубокое копирование слайса, чтобы тесты не влияли друг на друга
 	order.Items = make([]entity.Item, len(templOrder.Items))
 	copy(order.Items, templOrder.Items)
 
-	// Делаем заказ уникальным
 	order.OrderUID = fmt.Sprintf("test-uid-%d", i)
 	order.TrackNumber = fmt.Sprintf("TRACK-%d", i)
 	if len(order.Items) > 0 {
-		order.Items[0].Rid = fmt.Sprintf("rid-%d", i) // Делаем уникальным и товар
+		order.Items[0].Rid = fmt.Sprintf("rid-%d", i)
 	}
 	return order
 }
 
-// orderToRow конвертирует заказ и один его товар в срез []any для pgxmock.
 func orderToRow(order entity.Order, itemIndex int) []any {
-	item := entity.Item{} // На случай, если у заказа нет товаров
+	item := entity.Item{}
 	if len(order.Items) > itemIndex {
 		item = order.Items[itemIndex]
 	}
@@ -71,6 +64,9 @@ func orderToRow(order entity.Order, itemIndex int) []any {
 		order.OrderUID, order.TrackNumber, order.Entry, order.Locale, order.InternalSignature, order.CustomerID,
 		order.DeliveryService, order.ShardKey, order.SmID, order.DateCreated, order.OofShard,
 		order.Delivery.Name, order.Delivery.Phone, order.Delivery.Zip, order.Delivery.City, order.Delivery.Address, order.Delivery.Region, order.Delivery.Email,
+		
+		order.Payment.OrderUID, 
+		
 		order.Payment.RequestID, order.Payment.Currency, order.Payment.Provider, order.Payment.Amount, order.Payment.PaymentDt, order.Payment.Bank,
 		order.Payment.DeliveryCost, order.Payment.GoodsTotal, order.Payment.CustomFee,
 		item.Rid, item.ChrtID, item.TrackNumber, item.Price, item.Name,
@@ -79,12 +75,10 @@ func orderToRow(order entity.Order, itemIndex int) []any {
 }
 
 
-
-// ТЕСТЫ
 func TestGetOrderByUID(t *testing.T) {
 	mock, err := pgxmock.NewPool()
 	if err != nil {
-		t.Fatalf("an error '%s' was not expected when opening a stub database connection", err)
+		t.Fatalf("не удалось создать мок-пул: %v", err)
 	}
 	defer mock.Close()
 
@@ -92,7 +86,7 @@ func TestGetOrderByUID(t *testing.T) {
 
 	testOrder, err := loadTemplateOrder()
 	if err != nil {
-		t.Fatalf("failed to load template order: %v", err)
+		t.Fatalf("не удалось загрузить шаблон заказа: %v", err)
 	}
 	testOrderUID := testOrder.OrderUID
 
@@ -104,7 +98,7 @@ func TestGetOrderByUID(t *testing.T) {
 		expectedErr   error
 	}{
 		{
-			name:     "Success: Order with one item found",
+			name:     "Успех: Заказ с одним товаром найден",
 			orderUID: testOrderUID,
 			mockSetup: func() {
 				rows := pgxmock.NewRows(cols).AddRow(orderToRow(testOrder, 0)...)
@@ -116,7 +110,7 @@ func TestGetOrderByUID(t *testing.T) {
 			expectedErr:   nil,
 		},
 		{
-			name:     "Failure: Order not found",
+			name:     "Ошибка: Заказ не найден",
 			orderUID: "nonexistent-uid",
 			mockSetup: func() {
 				rows := pgxmock.NewRows(cols)
@@ -128,7 +122,7 @@ func TestGetOrderByUID(t *testing.T) {
 			expectedErr:   pgx.ErrNoRows,
 		},
 		{
-			name:     "Failure: Database error",
+			name:     "Ошибка: Ошибка базы данных",
 			orderUID: testOrderUID,
 			mockSetup: func() {
 				mock.ExpectQuery(`SELECT .* WHERE o.order_uid = \$1`).
@@ -145,26 +139,16 @@ func TestGetOrderByUID(t *testing.T) {
 			tc.mockSetup()
 			order, err := s.GetOrderByUID(context.Background(), tc.orderUID)
 
-			if !reflect.DeepEqual(err, tc.expectedErr) {
-				// Проверяем текст ошибки, если DeepEqual не сработал (из-за разных типов)
-				if tc.expectedErr != nil && err != nil && tc.expectedErr.Error() == err.Error() {
-					// Ошибки совпадают, всё ок
-				} else {
-					t.Errorf("expected error '%v', but got '%v'", tc.expectedErr, err)
-				}
-			}
+			assertError(t, err, tc.expectedErr)
 
 			if tc.expectedErr == nil {
-				// Сравниваем структуры только если ошибки не было
 				if !reflect.DeepEqual(order, tc.expectedOrder) {
-					gotJSON, _ := json.MarshalIndent(order, "", "  ")
-					expJSON, _ := json.MarshalIndent(tc.expectedOrder, "", "  ")
-					t.Errorf("order mismatch:\n\nexpected:\n%s\n\ngot:\n%s\n", string(expJSON), string(gotJSON))
+					assertJSONEqual(t, order, tc.expectedOrder)
 				}
 			}
 
 			if err := mock.ExpectationsWereMet(); err != nil {
-				t.Errorf("there were unfulfilled expectations: %s", err)
+				t.Errorf("были невыполненные ожидания мока: %s", err)
 			}
 		})
 	}
@@ -173,7 +157,7 @@ func TestGetOrderByUID(t *testing.T) {
 func TestGetLastNOrders(t *testing.T) {
 	mock, err := pgxmock.NewPool()
 	if err != nil {
-		t.Fatalf("an error '%s' was not expected when opening a stub database connection", err)
+		t.Fatalf("не удалось создать мок-пул: %v", err)
 	}
 	defer mock.Close()
 
@@ -181,16 +165,15 @@ func TestGetLastNOrders(t *testing.T) {
 
 	baseOrder, err := loadTemplateOrder()
 	if err != nil {
-		t.Fatalf("failed to load template order: %v", err)
+		t.Fatalf("не удалось загрузить шаблон заказа: %v", err)
 	}
 
-	// Готовим тестовые данные
 	order1 := generateTestOrder(baseOrder, 1)
 	order2 := generateTestOrder(baseOrder, 2)
 
 	orderWithTwoItems := generateTestOrder(baseOrder, 3)
-	item2 := orderWithTwoItems.Items[0] // Копируем первый товар
-	item2.Rid = "rid-3-item-2"           // Делаем его уникальным
+	item2 := orderWithTwoItems.Items[0]
+	item2.Rid = "rid-3-item-2"
 	item2.Name = "Второй товар"
 	orderWithTwoItems.Items = append(orderWithTwoItems.Items, item2)
 
@@ -208,7 +191,6 @@ func TestGetLastNOrders(t *testing.T) {
 				rows := pgxmock.NewRows(cols).
 					AddRow(orderToRow(order1, 0)...).
 					AddRow(orderToRow(order2, 0)...)
-
 				mock.ExpectQuery(`SELECT .* LIMIT \$1`).
 					WithArgs(2).
 					WillReturnRows(rows)
@@ -220,23 +202,20 @@ func TestGetLastNOrders(t *testing.T) {
 			name: "Успех: Получение 1 заказа с 2 товарами",
 			n:    1,
 			mockSetup: func() {
-				// JOIN вернет две строки для одного заказа
 				rows := pgxmock.NewRows(cols).
-					AddRow(orderToRow(orderWithTwoItems, 0)...). // Строка для первого товара
-					AddRow(orderToRow(orderWithTwoItems, 1)...)  // Строка для второго товара
-
+					AddRow(orderToRow(orderWithTwoItems, 0)...).
+					AddRow(orderToRow(orderWithTwoItems, 1)...)
 				mock.ExpectQuery(`SELECT .* LIMIT \$1`).
 					WithArgs(1).
 					WillReturnRows(rows)
 			},
-			expectedOrders: []entity.Order{orderWithTwoItems}, // Ожидаем один "собранный" заказ
+			expectedOrders: []entity.Order{orderWithTwoItems},
 			expectedErr:    nil,
 		},
 		{
 			name: "Успех: В БД меньше заказов чем запрошено",
 			n:    5,
 			mockSetup: func() {
-				// БД вернет только один заказ, хотя просили 5
 				rows := pgxmock.NewRows(cols).AddRow(orderToRow(order1, 0)...)
 				mock.ExpectQuery(`SELECT .* LIMIT \$1`).
 					WithArgs(5).
@@ -263,31 +242,50 @@ func TestGetLastNOrders(t *testing.T) {
 			tc.mockSetup()
 			orders, err := s.GetLastNOrders(context.Background(), tc.n)
 
-			if !reflect.DeepEqual(err, tc.expectedErr) {
-				if tc.expectedErr != nil && err != nil && tc.expectedErr.Error() == err.Error() {
-				} else {
-					t.Errorf("expected error '%v', but got '%v'", tc.expectedErr, err)
-				}
-			}
+			assertError(t, err, tc.expectedErr)
 
 			if tc.expectedErr == nil {
-				// Для надежного сравнения: если слайсы пустые, приводим их к nil
-				if len(orders) == 0 {
-					orders = nil
-				}
-				if len(tc.expectedOrders) == 0 {
-					tc.expectedOrders = nil
-				}
+				if len(orders) == 0 { orders = nil }
+				if len(tc.expectedOrders) == 0 { tc.expectedOrders = nil }
+				
 				if !reflect.DeepEqual(orders, tc.expectedOrders) {
-					gotJSON, _ := json.MarshalIndent(orders, "", "  ")
-					expJSON, _ := json.MarshalIndent(tc.expectedOrders, "", "  ")
-					t.Errorf("orders mismatch:\n\nexpected:\n%s\n\ngot:\n%s\n", string(expJSON), string(gotJSON))
+					assertJSONEqual(t, orders, tc.expectedOrders)
 				}
 			}
 
 			if err := mock.ExpectationsWereMet(); err != nil {
-				t.Errorf("there were unfulfilled expectations: %s", err)
+				t.Errorf("были невыполненные ожидания мока: %s", err)
 			}
 		})
+	}
+}
+
+
+func assertError(t *testing.T, got, want error) {
+	t.Helper()
+	if want == nil {
+		if got != nil {
+			t.Errorf("неожиданная ошибка: %v", got)
+		}
+		return
+	}
+	if got == nil || got.Error() != want.Error() {
+		t.Errorf("ожидалась ошибка '%v', а получили '%v'", want, got)
+	}
+}
+
+func assertJSONEqual(t *testing.T, got, want any) {
+	t.Helper()
+	gotJSON, err := json.MarshalIndent(got, "", "  ")
+	if err != nil {
+		t.Fatalf("не удалось сериализовать полученный результат в JSON: %v", err)
+	}
+	wantJSON, err := json.MarshalIndent(want, "", "  ")
+	if err != nil {
+		t.Fatalf("не удалось сериализовать ожидаемый результат в JSON: %v", err)
+	}
+
+	if string(gotJSON) != string(wantJSON) {
+		t.Errorf("результат не совпадает:\n\nожидали:\n%s\n\nполучили:\n%s\n", string(wantJSON), string(gotJSON))
 	}
 }
