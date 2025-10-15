@@ -1,9 +1,9 @@
 package config
 
 import (
+	"encoding/json"
 	"log"
 	"os"
-	"encoding/json"
 
 	"github.com/joho/godotenv"
 )
@@ -13,9 +13,10 @@ const (
 )
 
 type Config struct {
-	Env string `json:"env"`
-	Storage Storage  `json:"storage"`
-	CacheCap   int    `json:"cache_cap"`
+	Env      string  `json:"env"`
+	Storage  Storage `json:"storage"`
+	CacheCap int     `json:"cache_cap"`
+	ConsmerNumber int `json:"consumer_number"`
 }
 
 type Storage struct {
@@ -27,9 +28,7 @@ type Storage struct {
 	ServerPort string
 }
 
-
 func MustLoad() *Config {
-	// мб это нужно вынести в main? но пока пусть будет тут
 	err := godotenv.Load()
 
 	if err != nil {
@@ -43,7 +42,7 @@ func MustLoad() *Config {
 
 	if _, err := os.Stat(cfgPath); os.IsNotExist(err) {
 		log.Fatalf("config file by way %s doesn`t exist", cfgPath)
-	} else {
+	} else if err != nil {
 		log.Fatalf("error %v", err)
 	}
 

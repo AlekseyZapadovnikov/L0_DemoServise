@@ -17,7 +17,6 @@ type OrderSaver interface {
 type KafkaConsumer struct {
 	reader *kafka.Reader
 	saver  OrderSaver
-	// validate *validate.Validate
 }
 
 func NewKafkaConsumer(brokerAddr string, topic string, groupID string, saver OrderSaver) *KafkaConsumer {
@@ -30,7 +29,6 @@ func NewKafkaConsumer(brokerAddr string, topic string, groupID string, saver Ord
 	return &KafkaConsumer{
 		reader: reader,
 		saver:  saver,
-		// validate: validate.New(),
 	}
 }
 

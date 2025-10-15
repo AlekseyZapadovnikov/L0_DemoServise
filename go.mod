@@ -3,6 +3,7 @@ module github.com/Asus/L0_DemoServise
 go 1.24.2
 
 require (
+	github.com/brianvoe/gofakeit/v6 v6.28.0
 	github.com/go-playground/validator/v10 v10.28.0
 	github.com/jackc/pgx/v5 v5.7.5
 	github.com/joho/godotenv v1.5.1

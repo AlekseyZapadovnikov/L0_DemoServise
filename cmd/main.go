@@ -24,7 +24,7 @@ func main() {
 	slog.Info("Successfully connected to DB", "host", cfg.Storage.Host, "port", cfg.Storage.Port, "dbname", cfg.Storage.DBName)
 	defer stor.Close()
 
-	Cache := service.NewCache(stor, cfg.CacheCap) // TODO: не хардкодить
+	Cache := service.NewCache(stor, cfg.CacheCap)
 	slog.Info("Cache layer initialized")
 
 	// Восстановление кэша
@@ -38,11 +38,14 @@ func main() {
 	// Kafka consumer
 	consumer := broker.NewKafkaConsumer("localhost:9092", "orders", "order-service-group", Cache)
 	slog.Info("Kafka consumer initialized")
-	go func() {
-		if err := consumer.ConsumeAndSave(context.Background()); err != nil {
-			slog.Error("consumer error", "error", err)
-		}
-	}()
+
+	for i := 0; i < cfg.ConsmerNumber; i++ {
+		go func() {
+			if err := consumer.ConsumeAndSave(context.Background()); err != nil {
+				slog.Error("consumer error", "error", err)
+			}
+		}()
+	}
 
 	server := server.NewServer("localhost:8080", Cache)
 	slog.Info("HTTP server initialized", "address", "localhost:8080")
